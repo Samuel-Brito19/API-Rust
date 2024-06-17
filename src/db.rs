@@ -47,3 +47,26 @@ pub async fn db_count(conn: &deadpool_postgres::Client) -> Result<i64, Box<dyn s
     let count: i64 = rows[0].get(0);
     Ok(count)
 }
+
+pub async fn db_search(
+    conn: &deadpool_postgres::Client,
+    target: String,
+) -> Result<Vec<Person>, Box<dyn std::error::Error>> {
+    let stmt = conn
+        .prepare_cached(
+            "
+    SELECT ID, NICKNAME, NOME, BIRTHDATE, STACK
+    FROM PEOPLE P
+    WHERE P.BUSCA_TRGM LIKE $1
+    LIMIT 50;
+",
+        )
+        .await?;
+
+    let rows = conn.query(&stmt, &[&target]).await?;
+    let result = rows
+        .iter()
+        .map(|row| Person::from(row))
+        .collect::<Vec<Person>>();
+    Ok(result)
+}
