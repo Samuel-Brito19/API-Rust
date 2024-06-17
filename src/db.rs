@@ -1,8 +1,12 @@
+use std::sync::Arc;
+
 use deadpool_postgres::{GenericClient, Pool};
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Row;
 
 pub type AsyncVoidResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+pub type QueueEvent = (String, web::Json<CreatePerson>, Option<String>);
+pub type AppQueue = deadqueue::unlimited::Queue<QueueEvent>;
 #[derive(Deserialize)]
 pub struct CreatePerson {
     pub nickname: String,
@@ -70,3 +74,28 @@ pub async fn db_search(
         .collect::<Vec<Person>>();
     Ok(result)
 }
+
+pub async fn db_get_person(
+    conn: &deadpool_postgres::Client,
+    id: &String,
+) -> Result<Option<Person>, Box<dyn std::error::Error>> {
+    let rows = conn
+        .query(
+            "
+    SELECT ID, NICKNAME, NOME, BIRTHDATE, STACK FROM PEOPLE P
+    WHERE P.ID=$1;",
+            &[&id],
+        )
+        .await?;
+    if rows.len() == 0 {
+        return Ok(None);
+    }
+    Ok(Some(Person::from(&rows[0])))
+}
+
+#[derive(Deserialize)]
+pub struct SearchParams {
+    pub target: String,
+}
+
+pub async fn batch_insert(pool:Pool, queue: Arc<>)
