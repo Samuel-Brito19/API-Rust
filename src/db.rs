@@ -1,4 +1,6 @@
-use std::sync::Arc;
+use actix_web::web;
+use sql_builder::{quote, SqlBuilder};
+use std::{collections::HashSet, sync::Arc};
 
 use deadpool_postgres::{GenericClient, Pool};
 use serde::{Deserialize, Serialize};
@@ -98,4 +100,50 @@ pub struct SearchParams {
     pub target: String,
 }
 
-pub async fn batch_insert(pool:Pool, queue: Arc<>)
+pub async fn batch_insert(pool: Pool, queue: Arc<AppQueue>) {
+    let mut nicknames = HashSet::<String>::new();
+    let mut sql = String::new();
+    while queue.len() > 0 {
+        let (id, payload, stack) = queue.pop().await;
+        if nicknames.contains(&payload.nickname) {
+            continue;
+        }
+        nicknames.insert(payload.nickname.clone());
+        let mut sql_builder = SqlBuilder::insert_into("PEOPLE");
+        sql_builder
+            .field("ID")
+            .field("NICKNAME")
+            .field("NOME")
+            .field("BIRTHDATE")
+            .field("STACK");
+        sql_builder.values(&[
+            &quote(id),
+            &quote(&payload.nickname),
+            &quote(&payload.nome),
+            &quote(&payload.birthdate),
+            &quote(stack.unwrap_or("".into())),
+        ]);
+        let mut this_sql = match sql_builder.sql() {
+            Ok(x) => x,
+            Err(_) => continue,
+        };
+        this_sql.pop();
+        this_sql.push_str("ON CONFLICT DO NOTHING;");
+        sql.push_str(&this_sql.as_str());
+    }
+    {
+        let mut conn = match pool.get().await {
+            Ok(x) => x,
+            Err(_) => return,
+        };
+        let transaction = match conn.transaction().await {
+            Ok(x) => x,
+            Err(_) => return,
+        };
+        match transaction.batch_execute(&sql).await {
+            Ok(_) => (),
+            Err(_) => return,
+        };
+        let _ = transaction.commit().await;
+    }
+}
