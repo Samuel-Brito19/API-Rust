@@ -1,3 +1,4 @@
+use deadpool_postgres::{GenericClient, Pool};
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Row;
 
@@ -34,4 +35,15 @@ impl Person {
             stack,
         }
     }
+}
+
+pub async fn db_count(conn: &deadpool_postgres::Client) -> Result<i64, Box<dyn std::error::Error>> {
+    let rows = conn
+        .query(
+            "SELECT COUNT(1) FROM PEOPLE WHERE NICKNAME NOT LIKE 'WARMUP%';",
+            &[],
+        )
+        .await?;
+    let count: i64 = rows[0].get(0);
+    Ok(count)
 }
