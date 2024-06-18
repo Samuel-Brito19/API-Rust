@@ -4,7 +4,7 @@ use actix_web::{web, HttpResponse};
 use chrono::NaiveDate;
 
 use crate::{
-    db::{AppQueue, CreatePerson},
+    db::{AppQueue, CreatePerson, Person},
     redis::{get_redis, set_redis},
 };
 
@@ -59,4 +59,28 @@ fn validate_payload(payload: &CreatePerson) -> Option<HttpResponse> {
         }
     }
     return None;
+}
+
+fn create_dto_and_queue(
+    payload: web::Json<CreatePerson>,
+    id: &String,
+    queue: web::Json<Arc<AppQueue>>,
+) -> Person {
+    let stack = match &payload.stack {
+        Some(v) => Some(v.join(" ")),
+        None => None,
+    };
+    let nickname = payload.nickname.clone();
+    let nome = payload.nome.clone();
+    let birthdate = payload.birthdate.clone();
+    let stack_vec = payload.stack.clone();
+    let dto = Person {
+        id: id.clone(),
+        nickname,
+        nome,
+        birthdate,
+        stack: stack_vec,
+    };
+    queue.push((id.clone(), payload, stack));
+    return dto;
 }
