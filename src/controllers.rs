@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use actix_web::{web, HttpResponse};
+use chrono::NaiveDate;
 
 use crate::{
     db::{AppQueue, CreatePerson},
-    redis::get_redis,
+    redis::{get_redis, set_redis},
 };
 
 use deadpool_postgres::Pool;
@@ -36,4 +37,26 @@ pub async fn create_person(
     Ok(HttpResponse::Created()
         .append_header(("Location", format!("/people/{id}")))
         .finish())
+}
+
+// HELPER FUNCTIONS
+
+fn validate_payload(payload: &CreatePerson) -> Option<HttpResponse> {
+    if payload.nome.len() > 100 {
+        return Some(HttpResponse::BadRequest().finish());
+    }
+    if payload.nickname.len() > 32 {
+        return Some(HttpResponse::BadRequest().finish());
+    }
+    if NaiveDate::parse_from_str(&payload.birthdate, "%Y-%m-%d").is_err() {
+        return Some(HttpResponse::BadRequest().finish());
+    }
+    if let Some(stack) = &payload.stack {
+        for element in stack.clone() {
+            if element.len() > 32 {
+                return Some(HttpResponse::BadRequest().finish());
+            }
+        }
+    }
+    return None;
 }
