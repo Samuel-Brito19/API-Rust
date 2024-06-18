@@ -1,5 +1,6 @@
 mod controllers;
 mod db;
+mod redis;
 
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 

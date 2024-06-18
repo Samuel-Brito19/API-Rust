@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use actix_web::{web, HttpResponse};
 
-use crate::db::{AppQueue, CreatePerson};
+use crate::{
+    db::{AppQueue, CreatePerson},
+    redis::get_redis,
+};
 
 use deadpool_postgres::Pool;
 
