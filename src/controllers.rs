@@ -1,14 +1,14 @@
-use std::sync::Arc;
-
+use crate::db::*;
+use crate::redis::*;
 use actix_web::{web, HttpResponse};
 use chrono::NaiveDate;
+use deadpool_postgres::Pool;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     db::{AppQueue, CreatePerson, Person},
     redis::{get_redis, set_redis},
 };
-
-use deadpool_postgres::Pool;
 
 pub type APIResult = Result<HttpResponse, Box<dyn std::error::Error>>;
 
@@ -17,7 +17,7 @@ pub type APIResult = Result<HttpResponse, Box<dyn std::error::Error>>;
 pub async fn create_person(
     redis_pool: web::Data<deadpool_redis::Pool>,
     payload: web::Json<CreatePerson>,
-    queue: web::Json<Arc<AppQueue>>,
+    queue: web::Data<Arc<AppQueue>>,
 ) -> APIResult {
     match validate_payload(&payload) {
         Some(response) => return Ok(response),
@@ -35,8 +35,43 @@ pub async fn create_person(
     let _ = set_redis(&redis_pool, &id, &body).await;
 
     Ok(HttpResponse::Created()
-        .append_header(("Location", format!("/people/{id}")))
+        .append_header(("Location", format!("/pessoas/{id}")))
         .finish())
+}
+
+#[actix_web::get("people/{id}")]
+pub async fn consult_person(
+    id: web::Path<String>,
+    pool: web::Data<Pool>,
+    redis_pool: web::Data<deadpool_redis::Pool>,
+) -> APIResult {
+    let id = id.to_string();
+    match get_redis(&redis_pool, &id).await {
+        Err(_) => (),
+        Ok(bytes) => return Ok(HttpResponse::Ok().body(bytes)),
+    };
+    let dto = db_get_person(&pool.get().await?, &id).await?;
+    let body = serde_json::to_string(&dto)?;
+    let body_async = body.clone();
+    {
+        let _ = set_redis(&redis_pool, &id, &body_async).await;
+    }
+    Ok(HttpResponse::Ok().body(body))
+}
+
+#[actix_web::get("/pessoas")]
+pub async fn search_person(params: web::Query<SearchParams>, pool: web::Data<Pool>) -> APIResult {
+    let t = format!("%{}%", params.target.to_lowercase());
+    let result = db_search(&pool.get().await?, t).await?;
+    let body = serde_json::to_string(&result)?;
+    Ok(HttpResponse::Ok().body(body))
+}
+
+#[actix_web::get("/count-people")]
+pub async fn count_people(pool: web::Data<Pool>) -> APIResult {
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let count: i64 = db_count(&pool.get().await?).await?;
+    Ok(HttpResponse::Ok().body(count.to_string()))
 }
 
 // HELPER FUNCTIONS
@@ -64,7 +99,7 @@ fn validate_payload(payload: &CreatePerson) -> Option<HttpResponse> {
 fn create_dto_and_queue(
     payload: web::Json<CreatePerson>,
     id: &String,
-    queue: web::Json<Arc<AppQueue>>,
+    queue: web::Data<Arc<AppQueue>>,
 ) -> Person {
     let stack = match &payload.stack {
         Some(v) => Some(v.join(" ")),
